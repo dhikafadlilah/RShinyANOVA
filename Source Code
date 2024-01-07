@@ -1,0 +1,169 @@
+# Load the shiny package
+library(shiny)
+library(shinydashboard)
+library(DT)
+
+# Dataset for Table
+ad_placement_dataa <- data.frame(
+  Day = 1:10,
+  'Left Sidebar' = c(2.5, 2.7, 2.8, 2.6, 3, 2.4, 2.9, 2.5, 2.6, 2.7),
+  'Center Page' = c(3.8, 3.5, 4, 3.7, 3.9, 3.6, 4.1, 3.4, 3.8, 3.9),
+  'Right Sidebar' = c(3.1, 2.9, 3, 3.2, 3.3, 2.8, 3.4, 3.1, 3.2, 3.5))
+
+# Dataset for ANOVA
+ad_placement_data <- data.frame(
+  Ad_Placement = rep(c("Left Sidebar", "Center Page", "Right Sidebar"), each = 10),
+  CTR = c(
+    2.5, 2.7, 2.8, 2.6, 3, 2.4, 2.9, 2.5, 2.6, 2.7,
+    3.8, 3.5, 4, 3.7, 3.9, 3.6, 4.1, 3.4, 3.8, 3.9,
+    3.1, 2.9, 3, 3.2, 3.3, 2.8, 3.4, 3.1, 3.2, 3.5
+  )
+)
+
+# Define UI
+ui <- dashboardPage(
+  dashboardHeader(title = "Ad Placement CTR Dashboard"),
+  dashboardSidebar(
+    sidebarMenu(
+      menuItem("Example Dataset", tabName = "mainDashboard", icon = icon("dashboard")),
+      menuItem("Ad Placement Analysis", tabName = "analisisAd", icon = icon("chart-line"))
+    )
+  ),
+  dashboardBody(
+    tabItems(
+      # Tab 1: Main Dashboard
+      tabItem("mainDashboard",
+              fluidRow(
+                column(
+                  width = 12,
+                  box(tableOutput("adPlacementTable"), title = "Ad Placement Data", solidHeader = TRUE)
+                ),
+                column(
+                  width = 12,
+                  fluidRow(
+                    column(
+                      width = 12,
+                      box(plotOutput("boxplotMainDashboard"), title = "CTR Distribution by Ad Placement", solidHeader = TRUE)
+                    )
+                  ),
+                  fluidRow(
+                    column(
+                      width = 12,
+                      box(
+                        verbatimTextOutput("anovaResultMainDashboard"),
+                        title = "ANOVA Result",
+                        solidHeader = TRUE
+                      ),
+                      column(
+                        width = 12,
+                        tags$p("Using a 95% confidence level, if p-value < 0.05, then there is at least one significant difference in average CTR based on ad placement on the website. Besides, if p-value > 0.05 then there is no significant difference in average CTR based on ad placement on the website.",
+                               style = "color:black; font-size: 18px; text-align:left;")
+                      )
+                    )
+                  )
+                )
+              )
+      ),
+      
+      # Tab 2: Analisis Ad
+      tabItem("analisisAd",
+              fluidRow(
+                column(
+                  width = 12,
+                  box(
+                    title = "Ad Placement Analysis",
+                    solidHeader = TRUE,
+                    DTOutput("userDataTable"),
+                    fluidRow(
+                      column(4, numericInput("left_sidebar", "Left Sidebar:", value = 3)),
+                      column(4, numericInput("center_page", "Center Page:", value = 3)),
+                      column(4, numericInput("right_sidebar", "Right Sidebar:", value = 3))
+                    ),
+                    actionButton("add_row", "Add Row"),
+                    actionButton("delete_row", "Delete Row"),  # Added delete row button
+                    actionButton("run_anova", "Run ANOVA"),
+                    verbatimTextOutput("anovaResultAd"),
+                    plotOutput("boxplotUserInput", height = 300)  # Boxplot for user input
+                  )
+                )
+              )
+      )
+    )
+  )
+)
+
+# Define server
+server <- function(input, output, session) {
+  
+  # Reactive values to store user input data
+  user_data <- reactiveValues(data = NULL)
+  
+  # Render datatable for user input
+  output$userDataTable <- renderDT({
+    datatable(user_data$data, editable = TRUE, options = list(lengthChange = FALSE))
+  })
+  
+  # Add row button
+  observeEvent(input$add_row, {
+    new_row <- data.frame(
+      Ad_Placement = c("Left Sidebar", "Center Page", "Right Sidebar"),
+      CTR = c(input$left_sidebar, input$center_page, input$right_sidebar)
+    )
+    
+    # If user_data$data is NULL, initialize with new_row
+    if (is.null(user_data$data)) {
+      user_data$data <- new_row
+    } else {
+      # Otherwise, add new_row to existing data
+      user_data$data <- rbind(user_data$data, new_row)
+    }
+  })
+  
+  # Delete row button
+  observeEvent(input$delete_row, {
+    selected_rows <- input$userDataTable_rows_selected
+    if (length(selected_rows) > 0) {
+      user_data$data <- user_data$data[-selected_rows, ]
+    }
+  })
+  
+  # Run ANOVA on user input
+  observeEvent(input$run_anova, {
+    if (!is.null(user_data$data)) {
+      # Fit ANOVA model
+      anova_result_ad <- aov(CTR ~ Ad_Placement, data = user_data$data)
+      
+      # Print ANOVA summary
+      output$anovaResultAd <- renderPrint({
+        summary(anova_result_ad)
+      })
+      
+      # Plot boxplot for user input
+      output$boxplotUserInput <- renderPlot({
+        boxplot(CTR ~ Ad_Placement, data = user_data$data, col = "lightblue", main = "CTR Distribution by Ad Placement (User Input)")
+      })
+    }
+  })
+  
+  # Run ANOVA on ad_placement_data
+  output$anovaResultMainDashboard <- renderPrint({
+    # Fit ANOVA model
+    anova_result_main_dashboard <- aov(CTR ~ Ad_Placement, data = ad_placement_data)
+    
+    # Print ANOVA summary
+    summary(anova_result_main_dashboard)
+  })
+  
+  # Render boxplot for main dashboard
+  output$boxplotMainDashboard <- renderPlot({
+    boxplot(CTR ~ Ad_Placement, data = ad_placement_data, col = "lightblue", main = "CTR Distribution by Ad Placement (Example Dataset)")
+  })
+  
+  # Render table for main dashboard
+  output$adPlacementTable <- renderTable({
+    ad_placement_dataa
+  })
+}
+
+# Run the application
+shinyApp(ui = ui, server = server)
